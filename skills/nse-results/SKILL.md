@@ -23,7 +23,7 @@ desk results ITC -standalone
 desk results TCS -json
 ```
 
-(Needs the `desk` CLI — `go install github.com/amitchhatbar11/indian-trader-skills/cmd/desk@latest`, then `desk login fyers`; see the repo README. If `desk` is not found, tell the user how to install it rather than guessing.)
+(Needs the `desk` CLI. If `desk version` fails, tell the user to install it — macOS/Linux: `curl -fsSL https://raw.githubusercontent.com/amitchhatbar11/indian-trader-skills/main/install.sh | sh`; Windows PowerShell: `irm https://raw.githubusercontent.com/amitchhatbar11/indian-trader-skills/main/install.ps1 | iex`; Go users: `go install github.com/amitchhatbar11/indian-trader-skills/cmd/desk@latest`. No Go or Python is needed. A broker login (e.g. `desk login fyers`) is needed for live prices; see the repo README. Never run the installer without the user asking.)
 
 Figures are ₹ crore from the filing's own XBRL (the full-rupee facts ÷ 10⁷).
 Operating margin = (PBT + finance costs − other income) ÷ revenue; it is

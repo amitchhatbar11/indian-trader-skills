@@ -1,38 +1,63 @@
 # Indian Trader Skills
 
 [![skills.sh](https://skills.sh/b/amitchhatbar11/indian-trader-skills)](https://skills.sh/amitchhatbar11/indian-trader-skills)
+[![release](https://img.shields.io/github/v/release/amitchhatbar11/indian-trader-skills)](https://github.com/amitchhatbar11/indian-trader-skills/releases)
+[![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-Eleven agent skills for trading the **Indian market (NSE)**: cash stocks
-(intraday, shorts included) and stock options. Scan for setups, time the entry,
-plan the stop and target, replay the trade 10,000 times, size it, check it
-against your limits and **paper-trade** it. Plus news, quarterly results,
-bulk/block deals and insider trades, and price alerts.
+Eleven **agent skills for trading the Indian market (NSE)**: cash stocks
+(intraday, shorts included) and stock options. Scan for setups, time the
+entry, plan the stop and target, replay the trade 10,000 times, size it,
+check it against your limits and **paper-trade** it — plus news, quarterly
+results, bulk/block deals, insider trades, price alerts, and optional live
+orders to Fyers, Upstox, Zerodha, Dhan or Angel One.
 
-Everything runs in IST, on NSE hours and holidays, NSE tick sizes, F&O lot sizes,
-the F&O ban list, price bands and Indian charges (STT, stamp duty, GST).
+Built for NSE's rules, not a US template: IST sessions and holidays, NSE tick
+sizes (2025 bands), F&O lot sizes per expiry, the F&O ban list, price bands,
+Indian charges (STT, stamp duty, GST), SEBI's Integrated Filing XBRL.
 
-> **Paper by default.** Orders go to a local paper account unless you switch
-> on live trading yourself (`DESK_LIVE=true` and `desk serve`, see below).
-> Live is stock options only, one approved LIMIT order at a time, to Fyers,
-> Upstox, Zerodha, Dhan or Angel One.
+> **Paper by default.** Orders go to a local paper account unless you switch on
+> live trading yourself (`DESK_LIVE=true` + `desk serve`, below). Live is stock
+> options only, one approved LIMIT order at a time.
+
+## Try it — three prompts
+
+Install the skills and the `desk` CLI (below), then ask your agent:
+
+- *"Scan NSE F&O stocks for breakouts on the last close, and tell me which have news."*
+- *"Set a stop and target for TCS after its opening range, replay it, and size it to my limits."*
+- *"How did TCS's September quarter look, and did the big funds buy it?"*
 
 ## Install
 
+**1. The skills** — any agent that reads skills (Claude Code, Codex, Cursor, OpenCode, and [75 more](https://github.com/vercel-labs/skills)):
+
 ```bash
-# 1. The skills (Claude Code, Codex, Cursor, OpenCode and other agents)
 npx skills add amitchhatbar11/indian-trader-skills
-
-# 2. The desk CLI the skills run (needs Go 1.22+)
-go install github.com/amitchhatbar11/indian-trader-skills/cmd/desk@latest
-
-# 3. A price feed: Fyers (OAuth, once a trading day)
-mkdir -p ~/.nse-desk && cp .env.example ~/.nse-desk/.env   # then fill it in
-desk login fyers
-desk clock
 ```
 
-The daily scanner, news, results and deals use NSE's public files and need no
-broker login. Live quotes and intraday bars need one of:
+Claude Code users can also install it as a plugin: `/plugin marketplace add amitchhatbar11/indian-trader-skills`
+
+**2. The `desk` CLI** — no Go, no Python, no admin rights:
+
+```bash
+# macOS / Linux
+curl -fsSL https://raw.githubusercontent.com/amitchhatbar11/indian-trader-skills/main/install.sh | sh
+
+# Windows (PowerShell)
+irm https://raw.githubusercontent.com/amitchhatbar11/indian-trader-skills/main/install.ps1 | iex
+```
+
+It downloads the binary for your machine from [Releases](https://github.com/amitchhatbar11/indian-trader-skills/releases),
+checks its SHA-256, and puts it in `~/.local/bin` (`%LOCALAPPDATA%\desk` on
+Windows). Go users: `go install github.com/amitchhatbar11/indian-trader-skills/cmd/desk@latest`.
+
+```bash
+desk version
+desk clock        # NSE open/closed, holidays, stock-option expiries, price feeds
+```
+
+**3. A price feed** (for live quotes and intraday bars; the daily scanner,
+news, results and deals need none):
 
 | Broker | Setting (in `~/.nse-desk/.env`) | Notes |
 |---|---|---|
@@ -43,7 +68,7 @@ broker login. Live quotes and intraday bars need one of:
 
 `DESK_FEEDS` (default `fyers,upstox,zerodha,breeze`) sets the order; brokers
 without credentials are skipped, and a failing one falls through to the next.
-`desk login upstox|zerodha|breeze` explains how to get each token.
+`desk login upstox|zerodha|dhan|angelone|breeze` explains each token.
 
 ## The skills
 
@@ -133,6 +158,9 @@ news and deals flagged for them.
   automated requests and changes without notice; read
   [NSE's terms of use](https://www.nseindia.com/terms-of-use) and keep
   requests light (the desk caches and paces them).
+- **SEBI's retail algo rules:** live orders go through your broker's API, so
+  your broker's requirements (static IP whitelisting, order-rate limits, the
+  exchange's algo registration where it applies) are yours to meet.
 - **Paper fills are optimistic:** at the best visible price, no queue, no
   slippage; a stop fills at the last price, which a gap can carry past.
 - **Live trading is at your own risk.** The software is provided as is (MIT,
@@ -144,8 +172,11 @@ news and deals flagged for them.
 ## Development
 
 ```bash
-go vet ./... && go test ./...
+go vet ./... && go test ./...     # Go 1.22+
 go run ./cmd/desk clock
 ```
+
+Releases: push a tag (`git tag v0.3.1 && git push --tags`); the workflow
+builds every platform and publishes the archives with checksums.
 
 MIT licensed. Issues and pull requests welcome.

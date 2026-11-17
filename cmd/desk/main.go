@@ -48,6 +48,9 @@ type env struct {
 	notes   []string
 }
 
+// version is set at release time (-ldflags "-X main.version=v0.3.0").
+var version = "dev"
+
 func main() {
 	log.SetFlags(0)
 	if len(os.Args) < 2 {
@@ -55,6 +58,10 @@ func main() {
 		os.Exit(2)
 	}
 	cmd, args := os.Args[1], os.Args[2:]
+	if cmd == "version" || cmd == "-version" || cmd == "--version" {
+		fmt.Println("desk " + version)
+		return
+	}
 	cfg, err := loadConfig()
 	if err != nil {
 		log.Fatal(err)
@@ -83,6 +90,7 @@ func main() {
 
 func usage() {
 	fmt.Fprintln(os.Stderr, `usage: desk <command> [flags]       (files in ~/.nse-desk, or $NSE_DESK_HOME)
+  version   print the version
   login     fyers (OAuth, daily) | upstox | zerodha | breeze (how to set their tokens)
   serve     LIVE engine for real orders (needs DESK_LIVE=true): places approved option orders, tracks fills, runs stops
   clock     market open/closed, next session, NSE holidays, stock-option expiries, feeds

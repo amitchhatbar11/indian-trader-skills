@@ -1,0 +1,18 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "indian-trader-skills",
+  "description": "NSE (India) trading skills for AI agents: scanner, entry, exit, time machine, sizing, risk, paper and (optional) live broker, alerts, news, results, deals.",
+  "owner": {
+    "name": "amitchhatbar11",
+    "url": "https://github.com/amitchhatbar11"
+  },
+  "plugins": [
+    {
+      "name": "indian-trader-skills",
+      "description": "Eleven NSE trading skills and the desk CLI: scan, time, size and risk-check trades, paper-trade them, and read NSE news, results and deals. Paper by default.",
+      "source": "./",
+      "category": "productivity",
+      "homepage": "https://github.com/amitchhatbar11/indian-trader-skills"
+    }
+  ]
+}

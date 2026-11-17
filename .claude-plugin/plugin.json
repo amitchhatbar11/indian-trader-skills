@@ -1,0 +1,13 @@
+{
+  "name": "indian-trader-skills",
+  "description": "Eleven NSE (India) trading skills and the desk CLI: scanner, entry timer, exit planner, time machine, position sizer, risk check, paper broker with optional live option orders, alerts, news, quarterly results and bulk/block + insider deals. Paper by default.",
+  "version": "0.3.0",
+  "author": {
+    "name": "amitchhatbar11",
+    "url": "https://github.com/amitchhatbar11"
+  },
+  "homepage": "https://github.com/amitchhatbar11/indian-trader-skills",
+  "repository": "https://github.com/amitchhatbar11/indian-trader-skills",
+  "license": "MIT",
+  "keywords": ["nse", "india", "nifty", "trading", "stock-options", "zerodha", "upstox", "fyers", "dhan", "angel-one"]
+}

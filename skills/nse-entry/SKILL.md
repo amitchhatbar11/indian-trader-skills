@@ -26,7 +26,7 @@ desk entry RELIANCE -watch         # keep checking each bar until triggered/expi
 desk entry RELIANCE -now "2026-11-16 11:00"   # replay a moment of a past session
 ```
 
-(Needs the `desk` CLI — `go install github.com/amitchhatbar11/indian-trader-skills/cmd/desk@latest`, then `desk login fyers`; see the repo README. If `desk` is not found, tell the user how to install it rather than guessing.)
+(Needs the `desk` CLI. If `desk version` fails, tell the user to install it — macOS/Linux: `curl -fsSL https://raw.githubusercontent.com/amitchhatbar11/indian-trader-skills/main/install.sh | sh`; Windows PowerShell: `irm https://raw.githubusercontent.com/amitchhatbar11/indian-trader-skills/main/install.ps1 | iex`; Go users: `go install github.com/amitchhatbar11/indian-trader-skills/cmd/desk@latest`. No Go or Python is needed. A broker login (e.g. `desk login fyers`) is needed for live prices; see the repo README. Never run the installer without the user asking.)
 
 States: **TRIGGERED** (time and price of the trigger bar), **WAITING** (and
 how far), **EXPIRED** (no close beyond the line before `no_entries_after`,
