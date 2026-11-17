@@ -41,10 +41,11 @@ type angelScrip struct {
 	Seg    string `json:"exch_seg"`
 }
 
-const angelBase = "https://apiconnect.angelone.in"
+// angelBaseURL is SmartAPI's host (a variable so tests can point it elsewhere).
+var angelBaseURL = "https://apiconnect.angelone.in"
 
 func NewAngel(apiKey, jwt, cacheDir string) *Angel {
-	return &Angel{APIKey: apiKey, JWT: jwt, API: angelBase,
+	return &Angel{APIKey: apiKey, JWT: jwt, API: angelBaseURL,
 		MasterURL: "https://margincalculator.angelbroking.com/OpenAPI_File/files/OpenAPIScripMaster.json", CacheDir: cacheDir}
 }
 
@@ -262,9 +263,16 @@ func AngelLogin(apiKey, clientCode, mpin, totp string) (string, error) {
 	if apiKey == "" || clientCode == "" || mpin == "" || totp == "" {
 		return "", errors.New("API key, client code, MPIN and TOTP are all needed")
 	}
-	b, _ := json.Marshal(map[string]string{"clientcode": clientCode, "password": mpin, "totp": totp})
+	// SmartAPI calls the MPIN field "password"; the value is what the user
+	// typed into their terminal just now, never a stored secret.
+	type loginReq struct {
+		ClientCode string `json:"clientcode"`
+		PIN        string `json:"password"`
+		TOTP       string `json:"totp"`
+	}
+	b, _ := json.Marshal(loginReq{ClientCode: clientCode, PIN: mpin, TOTP: totp})
 	var c client
-	data, err := c.do("POST", angelBase+"/rest/auth/angelbroking/user/v1/loginByPassword", angelHeaders(apiKey), b, "application/json")
+	data, err := c.do("POST", angelBaseURL+"/rest/auth/angelbroking/user/v1/loginByPassword", angelHeaders(apiKey), b, "application/json")
 	if err != nil {
 		return "", err
 	}

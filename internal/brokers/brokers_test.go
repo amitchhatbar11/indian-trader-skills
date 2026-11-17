@@ -267,6 +267,23 @@ func TestAngel(t *testing.T) {
 	}
 }
 
+// The login request keeps SmartAPI's field names.
+func TestAngelLoginBody(t *testing.T) {
+	var got map[string]string
+	srv := httptest.NewServer(http.HandlerFunc(func(rw http.ResponseWriter, q *http.Request) {
+		json.NewDecoder(q.Body).Decode(&got)
+		rw.Write([]byte(`{"status":true,"message":"SUCCESS","data":{"jwtToken":"Bearer abc"}}`))
+	}))
+	defer srv.Close()
+	old := angelBaseURL
+	angelBaseURL = srv.URL
+	defer func() { angelBaseURL = old }()
+	jwt, err := AngelLogin("key", "A123", "1111", "222333")
+	if err != nil || jwt != "abc" || got["clientcode"] != "A123" || got["password"] != "1111" || got["totp"] != "222333" || len(got) != 3 {
+		t.Fatalf("%s %v body=%v", jwt, err, got)
+	}
+}
+
 func TestOpenNeedsCredentials(t *testing.T) {
 	for _, n := range []string{"upstox", "zerodha", "dhan", "angelone"} {
 		if _, err := Open(n, Options{}); err == nil {
