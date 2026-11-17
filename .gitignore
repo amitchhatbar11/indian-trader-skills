@@ -1,0 +1,6 @@
+.env
+*.token
+fyers_token.json*
+/desk
+/bin/
+.nse-desk/
