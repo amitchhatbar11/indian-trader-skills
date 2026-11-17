@@ -13,7 +13,8 @@ the F&O ban list, price bands and Indian charges (STT, stamp duty, GST).
 
 > **Paper by default.** Orders go to a local paper account unless you switch
 > on live trading yourself (`DESK_LIVE=true` and `desk serve`, see below).
-> Live is Fyers stock options only, one approved LIMIT order at a time.
+> Live is stock options only, one approved LIMIT order at a time, to Fyers,
+> Upstox, Zerodha, Dhan or Angel One.
 
 ## Install
 
@@ -66,15 +67,28 @@ A typical session: `desk scan` → `desk news` → `desk entry RELIANCE` →
 
 ## Live trading (real money, optional)
 
-Off unless you turn it on. You need a Fyers account, `desk login fyers`, and:
+Off unless you turn it on. You need an account with one of the brokers below,
+its token, a price feed (any broker in the feeds table), and:
 
 ```bash
 # in ~/.nse-desk/.env
 DESK_LIVE=true
+ORDER_BROKER=fyers        # or upstox, zerodha, dhan, angelone
 
 # in a terminal you keep open during market hours
 desk serve
 ```
+
+| `ORDER_BROKER` | Credentials | Product used | Notes |
+|---|---|---|---|
+| `fyers` (default) | `desk login fyers` | MARGIN | |
+| `upstox` | `UPSTOX_ACCESS_TOKEN` | D (carry forward) | |
+| `zerodha` | `KITE_API_KEY`, `KITE_ACCESS_TOKEN` | NRML | |
+| `dhan` | `DHAN_CLIENT_ID`, `DHAN_ACCESS_TOKEN` | MARGIN | Dhan accepts orders only from a whitelisted static IP |
+| `angelone` | `ANGEL_API_KEY`, then `desk login angelone` (client code, MPIN, TOTP typed by you) | CARRYFORWARD | |
+
+Dhan and Angel One supply orders only here; their quotes come from your
+other feeds (Fyers, Upstox or Zerodha).
 
 `desk serve` is the only part that can place an order. It listens on
 127.0.0.1 only, accepts requests only with the token it writes to
@@ -84,12 +98,12 @@ position book that:
 - checks every entry again (daily loss halt, NSE F&O ban list, bid-ask
   spread, price band) and refuses on any warning;
 - sends each **LIMIT** order **exactly once** (an unclear answer is looked up
-  by its order tag, never resent), and keeps it `PENDING` until Fyers
+  by its order tag, never resent), and keeps it `PENDING` until the broker
   confirms the fill, partial fills included;
 - closes a position at its stop or target with a LIMIT order, keeping it
   open if that exit is rejected;
-- compares itself with your Fyers positions every minute and stops acting on
-  anything that disagrees.
+- compares itself with your broker positions every minute and stops acting
+  on anything that disagrees.
 
 The agent can only send an order you approved: `desk broker show -live`
 prints the ticket with a "LIVE ORDER — REAL MONEY" heading, your typed yes is
@@ -98,8 +112,9 @@ command runs under your agent's own permission prompt. **Stock options only**
 (cash stocks stay paper). When `desk serve` is stopped, nothing watches open
 positions: their stops are not monitored.
 
-This code has been tested with unit tests and simulated broker responses.
-Start with one lot, and watch the first orders in the Fyers app.
+This code has been tested with unit tests and simulated broker responses
+built from each broker's published API, **not against live accounts**.
+Start with one lot, and watch the first orders in your broker's app.
 
 ## Files
 

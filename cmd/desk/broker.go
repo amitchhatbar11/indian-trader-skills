@@ -59,7 +59,7 @@ func cmdBroker(e *env, args []string) error {
 			return nil
 		}
 		if *live {
-			fmt.Println("⚠️  LIVE — REAL MONEY. These tickets would be placed on your Fyers account by the live engine.")
+			fmt.Println("⚠️  LIVE — REAL MONEY. These tickets would be placed on your broker account (ORDER_BROKER) by the live engine.")
 			if !e.cfg.DeskLive {
 				fmt.Println("   (DESK_LIVE is off: live orders are refused until you set it and restart the live engine.)")
 			}
@@ -91,7 +91,7 @@ func cmdBroker(e *env, args []string) error {
 						state += fmt.Sprintf(" at ₹%.2f", x.FillPx)
 					}
 					if x.OrderID != "" {
-						state += " · Fyers order " + x.OrderID
+						state += " · broker order " + x.OrderID
 					}
 					if x.Note != "" {
 						state += " · " + x.Note
@@ -240,7 +240,7 @@ func cmdBroker(e *env, args []string) error {
 			fmt.Printf("  %-8s %s %d %s @ ₹%.2f · LTP ₹%.2f · stop ₹%.2f · target ₹%.2f · P&L %s %s\n", p.State, p.Side, p.Qty, p.Symbol,
 				p.Entry, p.LTP, p.Stop, p.Target, desk.Rupees(p.PnL), p.Reason)
 		}
-		fmt.Println("The live engine tracks fills, stops and reconciliation with Fyers.")
+		fmt.Println("The live engine tracks fills, stops and reconciliation with your broker.")
 		return nil
 
 	case "live-exit":
@@ -301,7 +301,7 @@ func placeLive(e *env, led *desk.Ledger, po *desk.PaperOrder) error {
 	res, err := c.Submit(liveRequest(po.Order, po.Reply))
 	switch {
 	case errors.Is(err, desk.ErrUnknown):
-		po.Note = "no clear answer — check the Fyers order book"
+		po.Note = "no clear answer — check your broker's order book"
 	case err != nil:
 		po.Status, po.Note = "live_refused", err.Error()
 	default:
@@ -313,7 +313,7 @@ func placeLive(e *env, led *desk.Ledger, po *desk.PaperOrder) error {
 	if err != nil {
 		return err
 	}
-	fmt.Printf("LIVE %s %d %s LIMIT ₹%.2f sent — Fyers order %s, %s.\n", strings.ToUpper(po.Side), po.Qty, po.Symbol, po.Limit, res.OrderID, res.State)
+	fmt.Printf("LIVE %s %d %s LIMIT ₹%.2f sent — broker order %s, %s.\n", strings.ToUpper(po.Side), po.Qty, po.Symbol, po.Limit, res.OrderID, res.State)
 	fmt.Println("Accepted is not filled: the live engine tracks it to the fill and runs its stop (desk broker live).")
 	return nil
 }

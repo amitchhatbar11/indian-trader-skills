@@ -410,6 +410,25 @@ func (b *Book) RecentTrades(n int) []TradeRecord {
 // Refresh updates the mark-to-market LTP of all open positions (one batched
 // quotes call). No-op with an empty book.
 func (b *Book) Refresh(fy *fyers.FyersClient) error {
+	return b.RefreshWith(func(tickers []string) (map[string]float64, error) {
+		quotes, err := fy.GetQuotes(tickers)
+		if err != nil {
+			return nil, err
+		}
+		out := map[string]float64{}
+		for _, t := range tickers {
+			if q, ok := quotes["NSE:"+t]; ok {
+				out[t] = q.LTP
+			}
+		}
+		return out, nil
+	})
+}
+
+// RefreshWith is Refresh with any price source: ltps(tickers) returns the
+// last traded price by ticker (no "NSE:" prefix). A missing or zero price
+// leaves that position's LTP as it was.
+func (b *Book) RefreshWith(ltps func(tickers []string) (map[string]float64, error)) error {
 	b.mu.Lock()
 	tickers := make([]string, 0, len(b.Positions))
 	for t := range b.Positions {
@@ -420,7 +439,7 @@ func (b *Book) Refresh(fy *fyers.FyersClient) error {
 		return nil
 	}
 
-	quotes, err := fy.GetQuotes(tickers)
+	prices, err := ltps(tickers)
 	if err != nil {
 		return err
 	}
@@ -428,9 +447,9 @@ func (b *Book) Refresh(fy *fyers.FyersClient) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	for _, t := range tickers {
-		if q, ok := quotes["NSE:"+t]; ok && q.LTP > 0 {
+		if px := prices[t]; px > 0 {
 			if p, open := b.Positions[t]; open {
-				p.LTP = q.LTP
+				p.LTP = px
 				p.UpdatedAt = now
 			}
 		}

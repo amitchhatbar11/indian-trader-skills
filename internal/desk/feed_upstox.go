@@ -135,6 +135,10 @@ func (u *UpstoxFeed) get(path string, out any) error {
 	return json.Unmarshal(data, out)
 }
 
+// InstrumentKeys is the desk symbol → Upstox instrument key map (stocks and
+// stock options), from Upstox's public instrument file.
+func (u *UpstoxFeed) InstrumentKeys() (map[string]string, error) { return u.loadKeys() }
+
 func (u *UpstoxFeed) key(sym string) (string, error) {
 	keys, err := u.loadKeys()
 	if err != nil {

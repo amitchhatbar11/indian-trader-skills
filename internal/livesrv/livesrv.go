@@ -15,7 +15,8 @@
 //
 // It listens on loopback only and answers only requests carrying the token
 // it writes to ~/.nse-desk/live.token (fresh each start). It refuses to
-// start unless DESK_LIVE=true. Live orders are stock options only.
+// start unless DESK_LIVE=true. Live orders are stock options only, sent to
+// one broker (ORDER_BROKER: fyers, upstox, zerodha, dhan, angelone).
 package livesrv
 
 import (
@@ -42,9 +43,13 @@ const Strategy = "desk"
 
 // Server is the live engine.
 type Server struct {
-	Book          *book.Book
-	Fyers         *fyers.FyersClient
-	Broker        book.Broker
+	Book   *book.Book
+	Broker book.Broker // where orders go: Fyers, Upstox, Zerodha, Dhan or Angel One
+	// Quote and LTPs are the market data the guards and the stop monitor
+	// read (any configured feed). Ready says the session is usable.
+	Quote         book.QuoteFunc
+	LTPs          func(tickers []string) (map[string]float64, error)
+	Ready         func() error
 	Rules         book.Rules
 	Ban           *fyers.BanList
 	SellMarginPct float64
@@ -94,7 +99,7 @@ func (s *Server) Run(ctx context.Context, cal *desk.Calendar) {
 	startup := true
 	for {
 		now := time.Now()
-		if s.Fyers.IsAuthenticated() && !s.Fyers.TokenRejected() {
+		if s.Ready() == nil {
 			open := cal.At(now).Open
 			if startup || open && now.Sub(lastPos) >= time.Minute {
 				if evs, err := s.Book.ReconcilePositions(s.Broker); err != nil {
@@ -112,7 +117,7 @@ func (s *Server) Run(ctx context.Context, cal *desk.Calendar) {
 			}
 			if open && now.Sub(lastStops) >= 30*time.Second {
 				lastStops = now
-				if err := s.Book.Refresh(s.Fyers); err != nil {
+				if err := s.Book.RefreshWith(s.LTPs); err != nil {
 					s.say("mark-to-market failed (stops not checked this round): %v", err)
 				} else {
 					for _, ev := range s.Book.CheckStops(s.Broker, true, s.BufferPct) {
@@ -177,8 +182,8 @@ func (s *Server) auth(w http.ResponseWriter, r *http.Request) bool {
 	if s.token == "" || subtle.ConstantTimeCompare([]byte(r.Header.Get("X-Desk-Token")), []byte(s.token)) != 1 {
 		return fail(http.StatusUnauthorized, "bad desk token — it changes each time desk serve starts")
 	}
-	if !s.Fyers.IsAuthenticated() || s.Fyers.TokenRejected() {
-		return fail(http.StatusServiceUnavailable, "no valid Fyers login — run desk login fyers, then restart desk serve")
+	if err := s.Ready(); err != nil {
+		return fail(http.StatusServiceUnavailable, err.Error())
 	}
 	return true
 }
@@ -216,7 +221,7 @@ func (s *Server) order(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	warns, err := s.Book.PreEntry(s.Fyers, now, s.Rules, book.EntryContext{Side: side, Right: in.Right, Banned: banned}, in.Symbol, req.Limit)
+	warns, err := s.Book.PreEntryWith(s.Quote, now, s.Rules, book.EntryContext{Side: side, Right: in.Right, Banned: banned}, in.Symbol, req.Limit)
 	if err != nil {
 		write(w, http.StatusUnprocessableEntity, desk.LiveResult{Error: "refused by the entry guard — " + book.OneLine(err)})
 		return
@@ -238,7 +243,7 @@ func (s *Server) order(w http.ResponseWriter, r *http.Request) {
 		write(w, http.StatusBadGateway, desk.LiveResult{Error: err.Error()})
 		return
 	}
-	s.say("LIVE %s %d %s LIMIT ₹%.2f placed — Fyers order %s, waiting for the fill", side, req.Qty, in.Symbol, req.Limit, pos.OrderID)
+	s.say("LIVE %s %d %s LIMIT ₹%.2f placed — order %s, waiting for the fill", side, req.Qty, in.Symbol, req.Limit, pos.OrderID)
 	write(w, http.StatusOK, desk.LiveResult{OK: true, OrderID: pos.OrderID, State: pos.State})
 }
 
@@ -270,7 +275,7 @@ func (s *Server) exit(w http.ResponseWriter, r *http.Request) {
 		write(w, http.StatusNotFound, desk.LiveResult{Error: "no desk position in " + ticker})
 		return
 	}
-	if err := book.PreExit(s.Fyers, s.Rules, ticker, x.Limit); err != nil {
+	if err := book.PreExitWith(s.Quote, s.Rules, ticker, x.Limit); err != nil {
 		write(w, http.StatusUnprocessableEntity, desk.LiveResult{Error: err.Error()})
 		return
 	}

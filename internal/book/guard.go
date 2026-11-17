@@ -274,8 +274,22 @@ func (b *Book) TakeHaltNotice(now time.Time) (reason string, ok bool) {
 // entry: it refreshes the halt state, fetches a live quote for the contract
 // and runs every entry rule.
 func (b *Book) PreEntry(fy *fyers.FyersClient, now time.Time, r Rules, ec EntryContext, ticker string, limit float64) ([]string, error) {
+	return b.PreEntryWith(FyersQuote(fy), now, r, ec, ticker, limit)
+}
+
+// QuoteFunc fetches a fresh quote for one option ticker (no "NSE:" prefix).
+// It lets the guards run on any market-data source, not only Fyers.
+type QuoteFunc func(ticker string) (OptQuote, error)
+
+// FyersQuote is the Fyers quote source.
+func FyersQuote(fy *fyers.FyersClient) QuoteFunc {
+	return func(ticker string) (OptQuote, error) { return FetchOptQuote(fy, ticker) }
+}
+
+// PreEntryWith is PreEntry with any quote source.
+func (b *Book) PreEntryWith(quote QuoteFunc, now time.Time, r Rules, ec EntryContext, ticker string, limit float64) ([]string, error) {
 	b.CheckDailyLoss(now, r)
-	q, err := FetchOptQuote(fy, ticker)
+	q, err := quote(ticker)
 	if err != nil {
 		return nil, fmt.Errorf("no live quote for %s, so the entry checks cannot run: %w", ticker, err)
 	}
@@ -285,7 +299,12 @@ func (b *Book) PreEntry(fy *fyers.FyersClient, now time.Time, r Rules, ec EntryC
 // PreExit checks an exit price against a live quote. If the quote cannot be
 // fetched the exit is allowed — getting out must not depend on market data.
 func PreExit(fy *fyers.FyersClient, r Rules, ticker string, limit float64) error {
-	q, err := FetchOptQuote(fy, ticker)
+	return PreExitWith(FyersQuote(fy), r, ticker, limit)
+}
+
+// PreExitWith is PreExit with any quote source.
+func PreExitWith(quote QuoteFunc, r Rules, ticker string, limit float64) error {
+	q, err := quote(ticker)
 	if err != nil {
 		return nil
 	}

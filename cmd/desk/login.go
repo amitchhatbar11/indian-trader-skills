@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/amitchhatbar11/indian-trader-skills/internal/brokers"
 	"github.com/amitchhatbar11/indian-trader-skills/internal/fyers"
 )
 
@@ -54,9 +55,43 @@ func cmdLogin(e *env, args []string) error {
 	case "breeze":
 		fmt.Println("ICICI Breeze: app at https://api.icicidirect.com; open\n   https://api.icicidirect.com/apiuser/login?api_key=<YOUR_KEY>\n" +
 			"log in and set BREEZE_API_KEY and the day's BREEZE_SESSION (the apisession value) in " + filepath.Join(e.cfg.DataDir, ".env"))
+	case "dhan":
+		fmt.Println("Dhan: generate an access token at https://web.dhan.co (Profile → DhanHQ Trading APIs) and set DHAN_CLIENT_ID\n" +
+			"and DHAN_ACCESS_TOKEN in " + filepath.Join(e.cfg.DataDir, ".env") + ". Dhan only accepts orders from a whitelisted static IP.")
+	case "angelone", "angel":
+		return loginAngel(e)
 	default:
-		return fmt.Errorf("login fyers | upstox | zerodha | breeze")
+		return fmt.Errorf("login fyers | upstox | zerodha | dhan | angelone | breeze")
 	}
+	return nil
+}
+
+// loginAngel starts an Angel One SmartAPI session. The user types their
+// client code, MPIN and TOTP into their own terminal; only the session
+// token is kept (angel_token, readable by the user only).
+func loginAngel(e *env) error {
+	if e.cfg.AngelAPIKey == "" {
+		return fmt.Errorf("set ANGEL_API_KEY in %s first (SmartAPI app at https://smartapi.angelone.in)", filepath.Join(e.cfg.DataDir, ".env"))
+	}
+	in := bufio.NewReader(os.Stdin)
+	ask := func(q string) string {
+		fmt.Print(q)
+		s, _ := in.ReadString('\n')
+		return strings.TrimSpace(s)
+	}
+	fmt.Println("Angel One login — type these yourself; they go to Angel One only and are not stored.")
+	client := ask("Client code: ")
+	mpin := ask("MPIN (shown as you type): ")
+	totp := ask("Current 6-digit TOTP from your authenticator: ")
+	jwt, err := brokers.AngelLogin(e.cfg.AngelAPIKey, client, mpin, totp)
+	if err != nil {
+		return err
+	}
+	p := e.dir.Path("angel_token")
+	if err := os.WriteFile(p, []byte(jwt+"\n"), 0o600); err != nil {
+		return err
+	}
+	fmt.Println("✓ Angel One session saved to " + p + " (valid for the day). Restart desk serve to use it.")
 	return nil
 }
 

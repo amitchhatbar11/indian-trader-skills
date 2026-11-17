@@ -25,6 +25,12 @@ type Config struct {
 	DeskLive    bool
 	DeskLiveURL string
 
+	// OrderBroker is where `desk serve` sends live orders: fyers (default),
+	// upstox, zerodha, dhan or angelone.
+	OrderBroker                   string
+	DhanClientID, DhanAccessToken string
+	AngelAPIKey, AngelJWT         string
+
 	Capital, SLRiskPct, DailyLossPct, MaxSpreadPct float64
 
 	TelegramBotToken string
@@ -71,9 +77,12 @@ func loadConfig() (*Config, error) {
 		UpstoxAccessToken: get("UPSTOX_ACCESS_TOKEN", ""),
 		KiteAPIKey:        get("KITE_API_KEY", ""), KiteAccessToken: get("KITE_ACCESS_TOKEN", ""),
 		BreezeAPIKey: get("BREEZE_API_KEY", ""), BreezeSession: get("BREEZE_SESSION", ""),
-		DeskFeeds:        get("DESK_FEEDS", "fyers,upstox,zerodha,breeze"),
-		DeskLive:         get("DESK_LIVE", "false") == "true",
-		DeskLiveURL:      get("DESK_LIVE_URL", "http://127.0.0.1:8505"),
+		DeskFeeds:    get("DESK_FEEDS", "fyers,upstox,zerodha,breeze"),
+		DeskLive:     get("DESK_LIVE", "false") == "true",
+		DeskLiveURL:  get("DESK_LIVE_URL", "http://127.0.0.1:8505"),
+		OrderBroker:  get("ORDER_BROKER", "fyers"),
+		DhanClientID: get("DHAN_CLIENT_ID", ""), DhanAccessToken: get("DHAN_ACCESS_TOKEN", ""),
+		AngelAPIKey: get("ANGEL_API_KEY", ""), AngelJWT: get("ANGEL_JWT", ""),
 		Capital:          num("DESK_CAPITAL", 1_000_000),
 		SLRiskPct:        num("DESK_RISK_PCT", 0.5),
 		DailyLossPct:     num("DESK_DAILY_LOSS_PCT", 1),

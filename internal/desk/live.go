@@ -77,7 +77,7 @@ type LivePosition struct {
 }
 
 // ErrUnknown means the request may or may not have reached the broker.
-var ErrUnknown = errors.New("no clear answer from the live engine — the order MAY have been placed; check `desk broker live` and the Fyers order book before doing anything else, and do not resend")
+var ErrUnknown = errors.New("no clear answer from the live engine — the order MAY have been placed; check `desk broker live` and your broker's order book before doing anything else, and do not resend")
 
 // Validate is the shape check both sides run on a live request.
 func (r LiveRequest) Validate() error {

@@ -6,7 +6,7 @@ description: >-
   (~/.nse-desk/paper.json), fills a marketable limit at the touch or rests it,
   and sync runs fills, stops, targets and the flat-by close with Indian charges
   (STT, exchange, stamp duty, GST, brokerage). Live: hands one user-approved
-  stock-option LIMIT order at a time to `desk serve`, which places it on Fyers
+  stock-option LIMIT order at a time to `desk serve`, which places it with your broker (ORDER_BROKER: Fyers, Upstox, Zerodha, Dhan or Angel One)
   through its position book and tracks it to the fill, runs its stop and
   reconciles with the broker — only with DESK_LIVE=true, a typed yes for that
   exact order, and the agent's permission prompt. Use when the user says
@@ -44,12 +44,12 @@ desk broker log                           # paper: closed trades and the account
 
 ## LIVE orders (real money)
 
-The desk CLI never talks to Fyers' order API. A live order is handed to
+The desk CLI never talks to any broker's order API. A live order is handed to
 `desk serve` — a separate process the **user** starts and keeps running in a
 terminal — which places it through its position book: the entry guard (daily
 loss halt, F&O ban, spread, price band; any warning refuses), one LIMIT order
-sent exactly once, PENDING until Fyers confirms the fill, the stop monitor,
-reconciliation with Fyers.
+sent exactly once, PENDING until the broker confirms the fill, the stop monitor,
+reconciliation with the broker.
 
 Preconditions — if any is missing, stop and tell the user; never work around it:
 - The user explicitly asked for a LIVE / real-money order in this conversation.
@@ -63,16 +63,16 @@ Preconditions — if any is missing, stop and tell the user; never work around i
 Steps:
 1. `desk broker show -live` and show the ticket **exactly** as printed, with
    its "LIVE ORDER — REAL MONEY" heading.
-2. Ask: "Place this as a LIVE order with real money on your Fyers account?
+2. Ask: "Place this as a LIVE order with real money on your broker account?
    (yes/no)". One order per question. Never "yes to all". A paper yes never
    counts for live.
 3. On a clear yes: `desk broker approve -index N -reply "<their words>" -live`.
 4. Then `desk broker place -index N` — run it so the user's own permission
    prompt appears; never from a scheduled or background task.
-5. Report the result word for word: the Fyers order id and PENDING_ENTRY
+5. Report the result word for word: the broker's order id and PENDING_ENTRY
    ("accepted is not filled"), or the refusal reason. **If it says the answer
    was UNKNOWN, do not run place again** — tell the user to check
-   `desk broker live` and the Fyers order book; the desk marks it so it can
+   `desk broker live` and the broker's order book; the desk marks it so it can
    never be resent.
 
 After entry: `desk broker live` shows the live positions (fill, LTP, stop,
@@ -80,7 +80,7 @@ P&L). `desk serve` closes them at their stop or target by itself while it is
 running — if it is stopped, nothing watches them. To close one by hand, show
 the exit and ask the same kind of yes, then
 `desk broker live-exit -symbol SYM -limit PRICE -reply "<their words>"`.
-The exit stays PENDING until Fyers confirms it.
+The exit stays PENDING until the broker confirms it.
 
 ## Reporting
 
