@@ -133,13 +133,13 @@ func TestPaperBroker(t *testing.T) {
 	now := ist("2026-11-23 10:00")
 	l := &Ledger{StartCapital: 1_000_000}
 	o := goodOrder()
-	if _, err := l.Approve(o, "ok?", now); err == nil {
+	if _, err := l.Approve(o, "ok?", false, now); err == nil {
 		t.Fatal(`"ok?" is not a yes`)
 	}
 	if _, err := l.Place(o.ID, Quote{LTP: 500}, now); err == nil {
 		t.Fatal("placed without approval")
 	}
-	if _, err := l.Approve(o, "Yes", now); err != nil {
+	if _, err := l.Approve(o, "Yes", false, now); err != nil {
 		t.Fatal(err)
 	}
 	// Not marketable: rests.

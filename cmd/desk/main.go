@@ -68,7 +68,7 @@ func main() {
 	cmds := map[string]func(*env, []string) error{
 		"clock": cmdClock, "quote": cmdQuote, "scan": cmdScan, "entry": cmdEntry, "exit": cmdExit,
 		"sim": cmdSim, "size": cmdSize, "risk": cmdRisk, "broker": cmdBroker, "alerts": cmdAlerts,
-		"news": cmdNews, "results": cmdResults, "deals": cmdDeals, "login": cmdLogin,
+		"news": cmdNews, "results": cmdResults, "deals": cmdDeals, "login": cmdLogin, "serve": cmdServe,
 	}
 	f, ok := cmds[cmd]
 	if !ok {
@@ -84,6 +84,7 @@ func main() {
 func usage() {
 	fmt.Fprintln(os.Stderr, `usage: desk <command> [flags]       (files in ~/.nse-desk, or $NSE_DESK_HOME)
   login     fyers (OAuth, daily) | upstox | zerodha | breeze (how to set their tokens)
+  serve     LIVE engine for real orders (needs DESK_LIVE=true): places approved option orders, tracks fills, runs stops
   clock     market open/closed, next session, NSE holidays, stock-option expiries, feeds
   quote     live quotes (-write saves ~/.nse-desk/prices.json)
   scan      daily setups from NSE bhavcopies; -orb adds today's opening-range breakouts

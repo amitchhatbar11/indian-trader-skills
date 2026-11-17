@@ -20,11 +20,13 @@ func ist(s string) time.Time {
 	return t
 }
 
-// The desk must never reach a real order path: no order placement, cancel
-// or book entry anywhere in the package or its command.
+// The desk and its CLI never reach a broker's order API themselves: a live
+// order only ever goes through internal/livesrv (`desk serve`), which places
+// it via the position book. So no order placement, cancel or book entry
+// may appear in the desk package, the CLI or the Breeze client.
 func TestNoOrderAPI(t *testing.T) {
 	bad := regexp.MustCompile(`\b(PlaceOrder|PlaceLimit|PlaceLimitOrder|CancelOrder|SubmitEntry|SubmitExit|doRequestOnce|place_order)\b|"/orders(/sync)?["?]|/v2/order/|/orders/regular`)
-	for _, dir := range []string{".", "../../cmd/desk", "../fyers", "../breeze"} {
+	for _, dir := range []string{".", "../../cmd/desk", "../breeze"} {
 		files, _ := filepath.Glob(filepath.Join(dir, "*.go"))
 		if len(files) == 0 {
 			t.Fatalf("no sources in %s", dir)

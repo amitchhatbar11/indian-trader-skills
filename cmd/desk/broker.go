@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"net/http"
@@ -16,14 +17,16 @@ import (
 
 func cmdBroker(e *env, args []string) error {
 	if len(args) == 0 {
-		return fmt.Errorf("broker show | approve -index N -reply \"yes\" | place -index N | sync | flatten -symbol S | log")
+		return fmt.Errorf("broker show [-live] | approve -index N -reply \"yes\" [-live] | place -index N | sync | flatten -symbol S | log | live | live-exit -symbol S -limit P -reply \"yes\"")
 	}
 	sub, args := args[0], args[1:]
 	fs := flag.NewFlagSet("broker "+sub, flag.ExitOnError)
 	now := e.common(fs)
 	index := fs.Int("index", 0, "the order's number in ~/.nse-desk/orders.json (from broker show)")
 	reply := fs.String("reply", "", "the user's reply, word for word (approve)")
-	symbol := fs.String("symbol", "", "the symbol (flatten)")
+	symbol := fs.String("symbol", "", "the symbol (flatten, live-exit)")
+	live := fs.Bool("live", false, "show/approve as a LIVE order (real money; needs DESK_LIVE=true and the live engine running)")
+	exitLimit := fs.Float64("limit", 0, "live-exit: the LIMIT price to close at")
 	if _, err := parse(fs, args); err != nil {
 		return err
 	}
@@ -55,7 +58,13 @@ func cmdBroker(e *env, args []string) error {
 			e.emit(map[string]any{"orders": orders, "verdicts": verdicts, "ledger": led})
 			return nil
 		}
-		fmt.Println("PAPER broker — tickets (~/.nse-desk/orders.json):")
+		if *live {
+			fmt.Println("⚠️  LIVE — REAL MONEY. These tickets would be placed on your Fyers account by the live engine.")
+			if !e.cfg.DeskLive {
+				fmt.Println("   (DESK_LIVE is off: live orders are refused until you set it and restart the live engine.)")
+			}
+		}
+		fmt.Printf("%s broker — tickets (~/.nse-desk/orders.json):\n", yn(*live, "LIVE", "PAPER"))
 		if len(orders) == 0 {
 			fmt.Println("  none — run desk size -write, then desk risk")
 		}
@@ -75,12 +84,28 @@ func cmdBroker(e *env, args []string) error {
 			for _, x := range led.Orders {
 				if x.ID == o.ID {
 					state = strings.ToUpper(x.Status)
+					if x.Live {
+						state = "LIVE · " + state
+					}
 					if x.FillPx > 0 {
 						state += fmt.Sprintf(" at ₹%.2f", x.FillPx)
 					}
+					if x.OrderID != "" {
+						state += " · Fyers order " + x.OrderID
+					}
+					if x.Note != "" {
+						state += " · " + x.Note
+					}
 				}
 			}
-			fmt.Printf("\n#%d  %s\n", i+1, ticket(o))
+			if *live {
+				if in := desk.ParseInstrument(o.Symbol); !in.Option {
+					state += " · NOT LIVE-ELIGIBLE: live orders are stock options only"
+				}
+				fmt.Printf("\n#%d  LIVE ORDER — REAL MONEY — %s\n", i+1, ticket(o))
+			} else {
+				fmt.Printf("\n#%d  %s\n", i+1, ticket(o))
+			}
 			fmt.Printf("    %s\n", state)
 		}
 		printLedger(led, lim)
@@ -94,14 +119,24 @@ func cmdBroker(e *env, args []string) error {
 		if _, ok := desk.PassFor(verdicts, o); !ok {
 			return fmt.Errorf("order #%d has no PASS from the risk check for its current content — run desk risk", *index)
 		}
-		po, err := led.Approve(o, *reply, e.now)
+		if *live {
+			if !e.cfg.DeskLive {
+				return fmt.Errorf("DESK_LIVE is off — live orders are disabled (the user sets DESK_LIVE=true and restarts the live engine)")
+			}
+			req := liveRequest(o, *reply)
+			if err := req.Validate(); err != nil {
+				return fmt.Errorf("not approvable as LIVE: %w", err)
+			}
+		}
+		po, err := led.Approve(o, *reply, *live, e.now)
 		if err != nil {
 			return err
 		}
 		if err := led.Save(e.dir); err != nil {
 			return err
 		}
-		fmt.Printf("Approved #%d with the reply %q at %s. Next: desk broker place -index %d (PAPER).\n", *index, po.Reply, e.now.Format("15:04:05"), *index)
+		fmt.Printf("Approved #%d as %s with the reply %q at %s. Next: desk broker place -index %d.\n",
+			*index, yn(po.Live, "a LIVE order (real money)", "a PAPER order"), po.Reply, e.now.Format("15:04:05"), *index)
 		return nil
 
 	case "place":
@@ -111,6 +146,9 @@ func cmdBroker(e *env, args []string) error {
 		}
 		if _, ok := desk.PassFor(verdicts, o); !ok {
 			return fmt.Errorf("order #%d no longer matches a PASS from the risk check — run desk risk again", *index)
+		}
+		if po := led.Approved(o.ID); po != nil && po.Live {
+			return placeLive(e, led, po)
 		}
 		qs, err := e.quotes([]string{o.Symbol})
 		if err != nil {
@@ -181,6 +219,46 @@ func cmdBroker(e *env, args []string) error {
 			desk.Rupees(tr.Gross), tr.Charges, desk.Rupees(tr.Net))
 		return nil
 
+	case "live":
+		c, err := e.liveClient()
+		if err != nil {
+			return err
+		}
+		ps, err := c.Positions()
+		if err != nil {
+			return err
+		}
+		if e.jsonOut {
+			e.emit(ps)
+			return nil
+		}
+		fmt.Println("LIVE desk positions in the live engine's book (real money):")
+		if len(ps) == 0 {
+			fmt.Println("  none open, none closed today")
+		}
+		for _, p := range ps {
+			fmt.Printf("  %-8s %s %d %s @ ₹%.2f · LTP ₹%.2f · stop ₹%.2f · target ₹%.2f · P&L %s %s\n", p.State, p.Side, p.Qty, p.Symbol,
+				p.Entry, p.LTP, p.Stop, p.Target, desk.Rupees(p.PnL), p.Reason)
+		}
+		fmt.Println("The live engine tracks fills, stops and reconciliation with Fyers.")
+		return nil
+
+	case "live-exit":
+		if !e.cfg.DeskLive {
+			return fmt.Errorf("DESK_LIVE is off")
+		}
+		c, err := e.liveClient()
+		if err != nil {
+			return err
+		}
+		sym := desk.ParseInstrument(*symbol).Symbol
+		res, err := c.Exit(desk.LiveExit{Symbol: sym, Limit: *exitLimit, Reply: *reply})
+		if err != nil {
+			return err
+		}
+		fmt.Printf("LIVE exit for %s at limit ₹%.2f: %s. The position stays open until the fill is confirmed (desk broker live).\n", sym, *exitLimit, res.State)
+		return nil
+
 	case "log":
 		if e.jsonOut {
 			e.emit(led.Trades)
@@ -197,6 +275,51 @@ func cmdBroker(e *env, args []string) error {
 		return nil
 	}
 	return fmt.Errorf("unknown broker command %q", sub)
+}
+
+// liveRequest turns an approved ticket into the live-engine hand-off.
+func liveRequest(o desk.Order, reply string) desk.LiveRequest {
+	return desk.LiveRequest{ID: o.ID, Fingerprint: desk.Fingerprint(o), Symbol: o.Symbol, Side: o.Side, Qty: o.Qty,
+		LotSize: o.LotSize, Limit: o.Limit, Stop: o.Stop, Target: o.Target, Reply: reply}
+}
+
+// placeLive hands an approved LIVE order to the live engine, exactly once.
+func placeLive(e *env, led *desk.Ledger, po *desk.PaperOrder) error {
+	if !e.cfg.DeskLive {
+		return fmt.Errorf("DESK_LIVE is off — nothing was sent")
+	}
+	c, err := e.liveClient()
+	if err != nil {
+		return err
+	}
+	// Mark it before sending: whatever happens next, this ticket is never
+	// sent a second time by the desk.
+	po.Status, po.PlacedAt = "live_unknown", e.now
+	if err := led.Save(e.dir); err != nil {
+		return err
+	}
+	res, err := c.Submit(liveRequest(po.Order, po.Reply))
+	switch {
+	case errors.Is(err, desk.ErrUnknown):
+		po.Note = "no clear answer — check the Fyers order book"
+	case err != nil:
+		po.Status, po.Note = "live_refused", err.Error()
+	default:
+		po.Status, po.OrderID, po.Note = "live_sent", res.OrderID, res.State
+	}
+	if serr := led.Save(e.dir); serr != nil && err == nil {
+		err = serr
+	}
+	if err != nil {
+		return err
+	}
+	fmt.Printf("LIVE %s %d %s LIMIT ₹%.2f sent — Fyers order %s, %s.\n", strings.ToUpper(po.Side), po.Qty, po.Symbol, po.Limit, res.OrderID, res.State)
+	fmt.Println("Accepted is not filled: the live engine tracks it to the fill and runs its stop (desk broker live).")
+	return nil
+}
+
+func (e *env) liveClient() (*desk.LiveClient, error) {
+	return desk.NewLiveClient(e.cfg.DeskLiveURL, e.dir.Path("live.token"))
 }
 
 func ticket(o desk.Order) string {

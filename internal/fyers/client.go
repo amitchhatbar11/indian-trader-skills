@@ -1,7 +1,8 @@
-// Package fyers is a READ-ONLY Fyers API v3 client: login (OAuth), quotes,
-// candle history, expired-contract history and the SPAN margin calculator,
-// behind a throttle that keeps clear of Fyers' rate limits. It has no order,
-// cancel, order-book or positions methods — the desk only paper-trades.
+// Package fyers is a Fyers API v3 client: login (OAuth), quotes, candle
+// history, expired-contract history, the SPAN margin calculator, and LIMIT
+// order placement and tracking, behind a throttle that keeps clear of Fyers'
+// rate limits. Orders are placed only by internal/book, inside `desk serve`
+// with DESK_LIVE=true: placement and cancellation are sent exactly once.
 package fyers
 
 import (
@@ -247,6 +248,68 @@ type quoteValues struct {
 	LowPrice       float64 `json:"low_price"`
 	OpenPrice      float64 `json:"open_price"`
 	PrevClosePrice float64 `json:"prev_close_price"`
+}
+
+type OrderRequest struct {
+	Symbol string `json:"symbol"`
+	Qty    int    `json:"qty"`
+	// Type 1=Limit, 2=Market. Stock option strikes only accept LIMIT orders
+	// on Fyers — never send market orders for them.
+	Type         int     `json:"type"`
+	Side         int     `json:"side"` // 1=Buy, -1=Sell
+	ProductType  string  `json:"productType"`
+	LimitPrice   float64 `json:"limitPrice"`
+	StopPrice    float64 `json:"stopPrice"` // required by the v3 API; 0 for limit orders
+	Validity     string  `json:"validity"`
+	DisclosedQty int     `json:"disclosedQty"`
+	OfflineOrder bool    `json:"offlineOrder"`
+	StopLoss     float64 `json:"stopLoss,omitempty"`
+	TakeProfit   float64 `json:"takeProfit,omitempty"`
+	// OrderTag lets an order be found in the order book when the placement
+	// response was not acknowledged (code 201). Alphanumeric.
+	OrderTag string `json:"orderTag,omitempty"`
+}
+
+type OrderResponse struct {
+	Status  string `json:"s"`
+	Code    int    `json:"code"` // 201 = request made but not acknowledged: check the order book
+	OrderID string `json:"id"`
+	Message string `json:"message"`
+}
+
+// Order status codes (GET /orders).
+const (
+	OrderCancelled = 1
+	OrderFilled    = 2
+	OrderTransit   = 4
+	OrderRejected  = 5
+	OrderPending   = 6
+	OrderExpired   = 7
+)
+
+// Order is one entry of the order book.
+type Order struct {
+	ID          string  `json:"id"`
+	Symbol      string  `json:"symbol"`
+	Qty         int     `json:"qty"`
+	FilledQty   int     `json:"filledQty"`
+	Remaining   int     `json:"remainingQuantity"`
+	TradedPrice float64 `json:"tradedPrice"` // average fill price
+	LimitPrice  float64 `json:"limitPrice"`
+	Status      int     `json:"status"`
+	Side        int     `json:"side"`
+	Message     string  `json:"message"`
+	OrderTag    string  `json:"orderTag"`
+}
+
+// NetPosition is one entry of GET /positions.
+type NetPosition struct {
+	Symbol      string  `json:"symbol"`
+	NetQty      int     `json:"netQty"`
+	BuyQty      int     `json:"buyQty"`
+	SellQty     int     `json:"sellQty"`
+	NetAvg      float64 `json:"netAvg"`
+	ProductType string  `json:"productType"`
 }
 
 type savedToken struct {
@@ -532,6 +595,95 @@ func (c *FyersClient) tokenStale() bool {
 
 // ── API Requests ─────────────────────────────────────────────────────────────
 
+// doRequestOnce makes a single attempt — no retry ladder — for requests
+// that must never be repeated blindly (placing or cancelling an order).
+func (c *FyersClient) doRequestOnce(method, endpoint string, body io.Reader) ([]byte, error) {
+	data, status, err := c.doOnce(c.apiBase(), method, endpoint, body)
+	if err != nil {
+		if status == 401 {
+			c.setTokenRejected(true)
+		}
+		return nil, err
+	}
+	c.setTokenRejected(false)
+	return data, nil
+}
+
+// GetOrders returns today's order book.
+func (c *FyersClient) GetOrders() ([]Order, error) {
+	return c.orders("/orders")
+}
+
+// GetOrder returns one order by its Fyers order ID.
+func (c *FyersClient) GetOrder(id string) (*Order, error) {
+	os, err := c.orders("/orders?id=" + url.QueryEscape(id))
+	if err != nil {
+		return nil, err
+	}
+	for i := range os {
+		if os[i].ID == id {
+			return &os[i], nil
+		}
+	}
+	return nil, fmt.Errorf("order %s not in the order book", id)
+}
+
+func (c *FyersClient) orders(endpoint string) ([]Order, error) {
+	data, err := c.doRequest("GET", endpoint, nil)
+	if err != nil {
+		return nil, err
+	}
+	var resp struct {
+		S         string  `json:"s"`
+		Message   string  `json:"message"`
+		OrderBook []Order `json:"orderBook"`
+	}
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return nil, fmt.Errorf("order book parse failed: %w", err)
+	}
+	if resp.S != "ok" {
+		return nil, fmt.Errorf("order book: %s", resp.Message)
+	}
+	return resp.OrderBook, nil
+}
+
+// CancelOrder cancels a pending order. Sent once, like PlaceOrder.
+func (c *FyersClient) CancelOrder(id string) error {
+	body, _ := json.Marshal(map[string]string{"id": id})
+	data, err := c.doRequestOnce("DELETE", "/orders/sync", strings.NewReader(string(body)))
+	if err != nil {
+		return err
+	}
+	var resp OrderResponse
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return fmt.Errorf("cancel parse failed: %w", err)
+	}
+	if resp.Status != "ok" {
+		return fmt.Errorf("cancel rejected: %s", resp.Message)
+	}
+	return nil
+}
+
+// GetPositions returns today's net positions.
+func (c *FyersClient) GetPositions() ([]NetPosition, error) {
+	data, err := c.doRequest("GET", "/positions", nil)
+	if err != nil {
+		return nil, err
+	}
+	var resp struct {
+		S            string        `json:"s"`
+		Message      string        `json:"message"`
+		NetPositions []NetPosition `json:"netPositions"`
+	}
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return nil, fmt.Errorf("positions parse failed: %w", err)
+	}
+	if resp.S != "ok" {
+		return nil, fmt.Errorf("positions: %s", resp.Message)
+	}
+	return resp.NetPositions, nil
+}
+
 func (c *FyersClient) doRequest(method, endpoint string, body io.Reader) ([]byte, error) {
 	return c.doRequestBase(c.apiBase(), method, endpoint, body)
 }
@@ -765,6 +917,27 @@ func (c *FyersClient) GetCandles(symbol, resolution string, from, to time.Time) 
 		})
 	}
 	return out, nil
+}
+
+// PlaceOrder places an order via Fyers
+func (c *FyersClient) PlaceOrder(req OrderRequest) (*OrderResponse, error) {
+	body, err := json.Marshal(req)
+	if err != nil {
+		return nil, fmt.Errorf("marshal failed: %w", err)
+	}
+
+	// v3 places orders at /orders/sync. Sent ONCE: a transient-error retry
+	// could duplicate an order the server had already accepted.
+	data, err := c.doRequestOnce("POST", "/orders/sync", strings.NewReader(string(body)))
+	if err != nil {
+		return nil, err
+	}
+
+	var resp OrderResponse
+	if err := json.Unmarshal(data, &resp); err != nil {
+		return nil, fmt.Errorf("parse failed: %w", err)
+	}
+	return &resp, nil
 }
 
 // BuildOptionSymbol builds NIFTY option symbol using v3 format

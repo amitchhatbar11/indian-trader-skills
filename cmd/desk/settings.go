@@ -20,6 +20,11 @@ type Config struct {
 	BreezeAPIKey, BreezeSession                                    string
 	DeskFeeds                                                      string
 
+	// DeskLive allows LIVE option orders (real money) through `desk serve`.
+	// Off by default: the user sets DESK_LIVE=true themselves.
+	DeskLive    bool
+	DeskLiveURL string
+
 	Capital, SLRiskPct, DailyLossPct, MaxSpreadPct float64
 
 	TelegramBotToken string
@@ -67,6 +72,8 @@ func loadConfig() (*Config, error) {
 		KiteAPIKey:        get("KITE_API_KEY", ""), KiteAccessToken: get("KITE_ACCESS_TOKEN", ""),
 		BreezeAPIKey: get("BREEZE_API_KEY", ""), BreezeSession: get("BREEZE_SESSION", ""),
 		DeskFeeds:        get("DESK_FEEDS", "fyers,upstox,zerodha,breeze"),
+		DeskLive:         get("DESK_LIVE", "false") == "true",
+		DeskLiveURL:      get("DESK_LIVE_URL", "http://127.0.0.1:8505"),
 		Capital:          num("DESK_CAPITAL", 1_000_000),
 		SLRiskPct:        num("DESK_RISK_PCT", 0.5),
 		DailyLossPct:     num("DESK_DAILY_LOSS_PCT", 1),

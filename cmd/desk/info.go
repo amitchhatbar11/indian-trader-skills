@@ -40,7 +40,7 @@ func (s *seen) save() error {
 }
 
 // symbolsOr returns the given symbols, else the watchlist's and the paper
-// and trader positions' underlyings.
+// holdings' underlyings.
 func (e *env) symbolsOr(pos []string, n int) []string {
 	syms := upper(pos)
 	if len(syms) > 0 {

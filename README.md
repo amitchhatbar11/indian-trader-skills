@@ -11,9 +11,9 @@ bulk/block deals and insider trades, and price alerts.
 Everything runs in IST, on NSE hours and holidays, NSE tick sizes, F&O lot sizes,
 the F&O ban list, price bands and Indian charges (STT, stamp duty, GST).
 
-> **Paper only.** The skills never place a real order. The broker clients
-> here are read-only (no order, cancel or positions calls), and a test fails
-> the build if one appears. Trades go to a local paper account.
+> **Paper by default.** Orders go to a local paper account unless you switch
+> on live trading yourself (`DESK_LIVE=true` and `desk serve`, see below).
+> Live is Fyers stock options only, one approved LIMIT order at a time.
 
 ## Install
 
@@ -54,7 +54,7 @@ without credentials are skipped, and a failing one falls through to the next.
 | `nse-timemachine` | `desk sim` | 10,000 replays from the stock's own 5-min bars + the rule on every past session, with a verdict |
 | `nse-budget` | `desk size` | shares or whole lots within max loss, position cap, order value and cash; Fyers SPAN for sold options |
 | `nse-risk` | `desk risk` | LIMIT only, ticks, lots, stop, max loss, R:R, daily loss, entry window, holidays, ban list, price bands, option liquidity |
-| `nse-broker` | `desk broker` | paper fills, stop/target brackets, flat by 15:15, charges; approving needs the user's explicit yes |
+| `nse-broker` | `desk broker` | paper fills, stop/target brackets, flat by 15:15, charges; optional LIVE option orders via `desk serve`; every order needs the user's explicit yes |
 | `nse-alerts` | `desk alerts`, `desk clock` | price, % move, time and opening-bell alerts (optional Telegram); NSE holidays and expiries |
 | `nse-news` | `desk news` | NSE corporate announcements + Indian news headlines, tagged, only what's new |
 | `nse-results` | `desk results` | quarterly results from NSE's XBRL filings (SEBI Integrated Filing), year on year |
@@ -63,6 +63,43 @@ without credentials are skipped, and a failing one falls through to the next.
 A typical session: `desk scan` → `desk news` → `desk entry RELIANCE` →
 `desk exit` → `desk sim` → `desk size -write` → `desk risk` →
 `desk broker show / approve / place` → `desk broker sync`.
+
+## Live trading (real money, optional)
+
+Off unless you turn it on. You need a Fyers account, `desk login fyers`, and:
+
+```bash
+# in ~/.nse-desk/.env
+DESK_LIVE=true
+
+# in a terminal you keep open during market hours
+desk serve
+```
+
+`desk serve` is the only part that can place an order. It listens on
+127.0.0.1 only, accepts requests only with the token it writes to
+`~/.nse-desk/live.token` (new each start), and places orders through a
+position book that:
+
+- checks every entry again (daily loss halt, NSE F&O ban list, bid-ask
+  spread, price band) and refuses on any warning;
+- sends each **LIMIT** order **exactly once** (an unclear answer is looked up
+  by its order tag, never resent), and keeps it `PENDING` until Fyers
+  confirms the fill, partial fills included;
+- closes a position at its stop or target with a LIMIT order, keeping it
+  open if that exit is rejected;
+- compares itself with your Fyers positions every minute and stops acting on
+  anything that disagrees.
+
+The agent can only send an order you approved: `desk broker show -live`
+prints the ticket with a "LIVE ORDER — REAL MONEY" heading, your typed yes is
+recorded word for word and checked again by `desk serve`, and the place
+command runs under your agent's own permission prompt. **Stock options only**
+(cash stocks stay paper). When `desk serve` is stopped, nothing watches open
+positions: their stops are not monitored.
+
+This code has been tested with unit tests and simulated broker responses.
+Start with one lot, and watch the first orders in the Fyers app.
 
 ## Files
 
@@ -83,6 +120,8 @@ news and deals flagged for them.
   requests light (the desk caches and paces them).
 - **Paper fills are optimistic:** at the best visible price, no queue, no
   slippage; a stop fills at the last price, which a gap can carry past.
+- **Live trading is at your own risk.** The software is provided as is (MIT,
+  no warranty); a bug, an outage or a gap can lose real money.
 - **Not investment advice.** SEBI's own studies found that most individual
   intraday and F&O traders lose money. A scan, a replay or a passed risk
   check makes a trade checked, not a winner.

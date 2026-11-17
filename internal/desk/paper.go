@@ -41,11 +41,16 @@ func (p *PaperPos) OpenPnL() float64 {
 	return d * float64(p.Qty)
 }
 
-// PaperOrder is a ticket's life in the paper broker.
+// PaperOrder is a ticket's life in the broker: paper, or LIVE when Live is
+// set (handed to the live engine; see live.go).
 type PaperOrder struct {
 	Order
-	Status     string    `json:"status"` // approved / pending / filled / cancelled / rejected
-	Reply      string    `json:"reply"`  // the user's yes, word for word
+	// Status: approved / pending / filled / cancelled / rejected (paper);
+	// live_sent / live_refused / live_unknown (LIVE).
+	Status     string    `json:"status"`
+	Reply      string    `json:"reply"` // the user's yes, word for word
+	Live       bool      `json:"live,omitempty"`
+	OrderID    string    `json:"order_id,omitempty"` // the broker's id (LIVE)
 	ApprovedAt time.Time `json:"approved_at"`
 	PlacedAt   time.Time `json:"placed_at,omitempty"`
 	FilledAt   time.Time `json:"filled_at,omitempty"`
@@ -133,11 +138,16 @@ func (l *Ledger) Today(now time.Time) Today {
 			continue
 		}
 		t.Orders++
+		if o.Status == "live_refused" {
+			continue // the live engine refused it: nothing reached the broker
+		}
 		if !o.Exit {
 			t.Entries++
 			t.Symbols[o.Symbol+"|"+o.Side] = true
 		}
-		if o.Status == "pending" && !o.Exit {
+		// A live order's risk counts for the whole day: its fills and exits
+		// are tracked by the live engine's book, not here.
+		if (o.Status == "pending" || o.Live) && !o.Exit {
 			t.OpenRisk += o.MaxLoss
 		}
 	}
@@ -168,17 +178,19 @@ var yesRe = regexp.MustCompile(`(?i)^\s*(yes|y|yes please|yes,? place it|place i
 // "yes but smaller") is not an approval.
 func IsYes(reply string) bool { return yesRe.MatchString(reply) }
 
-// Approve records the user's yes for an order that passed the risk check.
-func (l *Ledger) Approve(o Order, reply string, now time.Time) (*PaperOrder, error) {
+// Approve records the user's yes for an order that passed the risk check,
+// for the paper broker or (live) for a LIVE order. A yes is for one mode:
+// a paper approval never becomes a live one.
+func (l *Ledger) Approve(o Order, reply string, live bool, now time.Time) (*PaperOrder, error) {
 	if !IsYes(reply) {
 		return nil, fmt.Errorf("%q is not a clear yes — nothing was approved", reply)
 	}
 	for _, x := range l.Orders {
-		if x.ID == o.ID && x.Status != "cancelled" && x.Status != "rejected" {
+		if x.ID == o.ID && x.Status != "cancelled" && x.Status != "rejected" && x.Status != "live_refused" {
 			return nil, fmt.Errorf("order %s was already approved (%s)", o.ID, x.Status)
 		}
 	}
-	po := &PaperOrder{Order: o, Status: "approved", Reply: reply, ApprovedAt: now}
+	po := &PaperOrder{Order: o, Status: "approved", Reply: reply, ApprovedAt: now, Live: live}
 	l.Orders = append(l.Orders, po)
 	return po, nil
 }
@@ -196,12 +208,25 @@ func (l *Ledger) Place(id string, q Quote, now time.Time) (*PaperOrder, error) {
 	if po == nil {
 		return nil, fmt.Errorf("no approved order %s — approve it with the user's yes first", id)
 	}
+	if po.Live {
+		return nil, fmt.Errorf("order %s was approved as LIVE — it goes to the live engine, not the paper market", id)
+	}
 	if po.Type != "LIMIT" || po.Limit <= 0 {
 		return nil, fmt.Errorf("order %s is not a limit order — refused", id)
 	}
 	po.PlacedAt, po.Status = now, "pending"
 	l.tryFill(po, q, now)
 	return po, nil
+}
+
+// Approved finds the approved (not yet sent) order with this id.
+func (l *Ledger) Approved(id string) *PaperOrder {
+	for _, x := range l.Orders {
+		if x.ID == id && x.Status == "approved" {
+			return x
+		}
+	}
+	return nil
 }
 
 // tryFill fills a pending order when the market reaches its limit.
